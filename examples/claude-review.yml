@@ -1,0 +1,22 @@
+# Copy to .github/workflows/claude-review.yml in the repository that should be reviewed.
+name: Claude Review
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize, labeled]
+# The reusable workflow can only use what is granted here
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+jobs:
+  review:
+    uses: welles/claude-reviewer/.github/workflows/review.yml@v1
+    secrets: inherit
+    # Optional, with their defaults:
+    # with:
+    #   model: claude-opus-5-5
+    #   thorough-model: claude-fable-5-1
+    #   label: claude-review
+    #   instructions: .github/review-instructions.md
+    #   verdict: true
+    #   blocking-severities: kritisch,fehler

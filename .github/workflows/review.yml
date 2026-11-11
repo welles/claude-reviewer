@@ -1,0 +1,224 @@
+name: Claude Review
+# Reusable workflow: AI review of pull requests with the Claude Agent SDK on the Anthropic API.
+# Every new or updated PR gets a review with `model`; the label `label` starts a thorough review
+# with `thorough-model`. With `verdict: true` the review approves the PR or requests changes,
+# like a human reviewer. How to use it: README.md.
+#
+# Everything the reviewer needs (scripts, prompt, schema, SDK lockfile) comes from this repository,
+# at exactly the commit of this workflow file (job.workflow_sha), never from the PR.
+on:
+  workflow_call:
+    inputs:
+      model:
+        description: Model of the automatic review
+        type: string
+        default: claude-opus-5-5
+      thorough-model:
+        description: Model of the thorough review (started by the label)
+        type: string
+        default: claude-fable-5-1
+      label:
+        description: Label that starts a thorough review; also the prefix of the hidden markers
+        type: string
+        default: claude-review
+      reviewer-name:
+        description: Name in the summary comment
+        type: string
+        default: Claude
+      instructions:
+        description: Project instructions in the repository (falls back to a generic template)
+        type: string
+        default: .github/review-instructions.md
+      verdict:
+        description: Approve or request changes instead of only commenting
+        type: boolean
+        default: true
+      blocking-severities:
+        description: Comma-separated severities that request changes while a finding is open
+        type: string
+        default: kritisch,fehler
+      max-turns:
+        description: Upper limit of agent turns per review
+        type: number
+        default: 60
+      max-budget-usd:
+        description: Upper limit of API cost per review in USD
+        type: number
+        default: 5
+    secrets:
+      ANTHROPIC_REVIEW_KEY:
+        description: Anthropic API key
+        required: true
+      REVIEWER_APP_CLIENT_ID:
+        description: Client ID of the GitHub App that posts the review (optional)
+        required: false
+      REVIEWER_APP_KEY:
+        description: Private key of that GitHub App (optional)
+        required: false
+
+env:
+  REVIEWER: ${{ inputs.reviewer-name }}
+  LABEL: ${{ inputs.label }}
+  THOROUGH: ${{ github.event.action == 'labeled' }}
+  MODEL: ${{ github.event.action == 'labeled' && inputs.thorough-model || inputs.model }}
+  THOROUGH_MODEL: ${{ inputs.thorough-model }}
+  PR_NUMBER: ${{ github.event.pull_request.number }}
+  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+jobs:
+  review:
+    # Only pull_request events: they run without secrets for PRs from forks, so code from a PR
+    # never runs next to the key (pull_request_target would). Fork PRs are skipped because they get
+    # no secrets anyway; labels can only be set by people with write access. PRs of bots
+    # (Dependabot) are skipped too, also when a person sets the label.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.sender.type != 'Bot' &&
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action != 'labeled' || github.event.label.name == inputs.label)
+    # The name tells other runs which job is a thorough review of which PR (see thorough-exists.cjs)
+    # Quoted: " #" would start a YAML comment
+    name: "${{ github.event.action == 'labeled' && 'Thorough review' || 'Review' }} #${{ github.event.pull_request.number }}"
+    # A new push cancels the running automatic review of the same PR. A thorough review gets a group
+    # of its own per PR and label: a push does not cancel it, and a second label waits for it.
+    concurrency:
+      group: ${{ inputs.label }}-${{ github.event.pull_request.number }}${{ github.event.action == 'labeled' && format('-{0}', github.event.label.name) || '' }}
+      cancel-in-progress: ${{ github.event.action != 'labeled' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      review: ${{ steps.claude.outputs.review }}
+    steps:
+      # The reviewer's own files at the commit of this workflow, outside the workspace
+      - name: Reviewer
+        env:
+          WORKFLOW_REF: ${{ job.workflow_ref }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          repo="${WORKFLOW_REF%%/.github/workflows/*}"
+          dir="$RUNNER_TEMP/claude-reviewer"
+          git init -q "$dir"
+          git -C "$dir" fetch -q --depth 1 "https://github.com/$repo" "$WORKFLOW_SHA"
+          git -C "$dir" checkout -q FETCH_HEAD
+          echo "REVIEWER_DIR=$dir" >> "$GITHUB_ENV"
+          echo "PR_DIR=$RUNNER_TEMP/pr" >> "$GITHUB_ENV"
+
+      # A label set together with a push (or while the automatic review waits) starts a thorough
+      # review of the same commit; the automatic one would only repeat it (and cost twice).
+      - name: Skip if a thorough review of this commit exists
+        id: thorough
+        if: env.THOROUGH != 'true'
+        # v8.0.0
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          script: return await require(`${process.env.REVIEWER_DIR}/scripts/thorough-exists.cjs`)({ github, context, core })
+          result-encoding: string
+
+      # The PR head, so that the line numbers of the findings match the diff
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.thorough.outputs.result != 'true'
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      # The reviewer gets no network access and no GitHub token, so everything it needs from
+      # GitHub is fetched here into files
+      - name: PR context
+        if: steps.thorough.outputs.result != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          INSTRUCTIONS: ${{ inputs.instructions }}
+          FINDING_MARKER: "<!-- ${{ inputs.label }}-finding "
+        run: bash "$REVIEWER_DIR/scripts/pr-context.sh"
+
+      # Installed outside the checkout from this repository's lockfile, so nothing from the PR
+      # (package.json, .npmrc) takes part
+      - name: Claude Agent SDK
+        if: steps.thorough.outputs.result != 'true'
+        working-directory: ${{ env.REVIEWER_DIR }}
+        run: npm ci --no-audit --no-fund --ignore-scripts
+
+      # Only reading tools in the checkout and the PR files, no shell, no network, no settings, hooks
+      # or MCP servers from the repo (details in the script)
+      - name: Claude
+        id: claude
+        if: steps.thorough.outputs.result != 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_REVIEW_KEY }}
+          REPOSITORY: ${{ github.repository }}
+          MAX_TURNS: ${{ inputs.max-turns }}
+          MAX_BUDGET_USD: ${{ inputs.max-budget-usd }}
+        run: node "$REVIEWER_DIR/scripts/claude-review.mjs"
+
+  # Posting runs in a job of its own: it needs write access, the review job must not have it
+  comment:
+    needs: review
+    if: needs.review.outputs.review != ''
+    # An automatic and a thorough review of the same PR can finish at the same time; one after the
+    # other, the second sees the comments, threads and summary of the first
+    concurrency:
+      group: ${{ inputs.label }}-comment-${{ github.event.pull_request.number }}
+      queue: max
+    runs-on: ubuntu-24.04
+    permissions:
+      # Fallback when no GitHub App is configured: review, summary comment, label
+      pull-requests: write
+      # The start time of this run (remove-label.cjs)
+      actions: read
+    env:
+      APP_CLIENT_ID: ${{ secrets.REVIEWER_APP_CLIENT_ID }}
+      VERDICT: ${{ inputs.verdict }}
+      BLOCKING: ${{ inputs.blocking-severities }}
+    steps:
+      - name: Reviewer
+        env:
+          WORKFLOW_REF: ${{ job.workflow_ref }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          repo="${WORKFLOW_REF%%/.github/workflows/*}"
+          dir="$RUNNER_TEMP/claude-reviewer"
+          git init -q "$dir"
+          git -C "$dir" fetch -q --depth 1 "https://github.com/$repo" "$WORKFLOW_SHA"
+          git -C "$dir" checkout -q FETCH_HEAD
+          echo "REVIEWER_DIR=$dir" >> "$GITHUB_ENV"
+          created=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .created_at)
+          echo "RUN_CREATED_AT=$created" >> "$GITHUB_ENV"
+
+      # The review appears under the GitHub App's name when one is configured, otherwise as
+      # github-actions (which can only approve when the repository allows it)
+      - name: App token
+        id: app
+        if: env.APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.REVIEWER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.REVIEWER_APP_KEY }}
+          permission-pull-requests: write
+
+      - name: Post review
+        # v8.0.0
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        env:
+          REVIEW: ${{ needs.review.outputs.review }}
+        with:
+          github-token: ${{ steps.app.outputs.token || github.token }}
+          script: await require(`${process.env.REVIEWER_DIR}/scripts/post-review.cjs`)({ github, context, core })
+
+      # The label only starts the thorough review; removing it shows that the review is done and
+      # lets the next one start by setting it again. It stays after a failed review (this job does
+      # not run then), so that it is clear the thorough review is still missing.
+      - name: Remove label
+        if: env.THOROUGH == 'true'
+        # v8.0.0
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          github-token: ${{ steps.app.outputs.token || github.token }}
+          script: await require(`${process.env.REVIEWER_DIR}/scripts/remove-label.cjs`)({ github, context, core })
