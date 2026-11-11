@@ -101,6 +101,9 @@ git tag -f -m v1 v1 && git push -f origin v1
 
 Inkompatible Änderungen (andere Secrets, anderes Format der Marker) bekommen `v2`.
 
+Dependabot hält das SDK und die Actions aktuell (wöchentlich). Auch diese Updates erreichen die
+Repos erst, wenn `v1` verschoben wird.
+
 ## Kosten und Abschalten
 
 Was ein Lauf gekostet hat, steht im Log unter „Claude“ (z. B. „claude-opus-5-5: 8 turns, 0.22 $“);
