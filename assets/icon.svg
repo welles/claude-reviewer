@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Logo of the GitHub App: a magnifier with a check mark. GitHub crops it to a rounded square or circle, so the motif keeps a margin. -->
+  <rect width="512" height="512" fill="#D97757"/>
+  <circle cx="226" cy="226" r="148" fill="#C4623F" opacity="0.35"/>
+  <g fill="none" stroke="#FBF7F1" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="226" cy="226" r="118" stroke-width="40"/>
+    <line x1="314" y1="314" x2="398" y2="398" stroke-width="56"/>
+    <polyline points="172,230 211,269 284,192" stroke-width="36"/>
+  </g>
+</svg>
