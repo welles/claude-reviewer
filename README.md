@@ -96,7 +96,7 @@ gh secret set REVIEWER_APP_KEY -R <owner>/<repo> < claude-reviewer.private-key.p
 Repos binden `@v1` ein. Änderungen hier wirken erst, wenn der Tag verschoben wird:
 
 ```bash
-git tag -f v1 && git push -f origin v1
+git tag -f -m v1 v1 && git push -f origin v1
 ```
 
 Inkompatible Änderungen (andere Secrets, anderes Format der Marker) bekommen `v2`.
