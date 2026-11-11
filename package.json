@@ -4,6 +4,6 @@
   "type": "module",
   "description": "Dependencies of the review step; installed with npm ci on the runner",
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.300"
+    "@anthropic-ai/claude-agent-sdk": "0.3.319"
   }
 }
