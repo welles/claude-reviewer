@@ -11,7 +11,11 @@ permissions:
 jobs:
   review:
     uses: welles/claude-reviewer/.github/workflows/review.yml@v1
-    secrets: inherit
+    # Only the secrets of the review, not `inherit` (which would pass every secret of the repo)
+    secrets:
+      ANTHROPIC_REVIEW_KEY: ${{ secrets.ANTHROPIC_REVIEW_KEY }}
+      REVIEWER_APP_CLIENT_ID: ${{ secrets.REVIEWER_APP_CLIENT_ID }}
+      REVIEWER_APP_KEY: ${{ secrets.REVIEWER_APP_KEY }}
     # Optional, with their defaults:
     # with:
     #   model: claude-opus-5-5
