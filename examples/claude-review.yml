@@ -24,3 +24,4 @@ jobs:
     #   instructions: .github/review-instructions.md
     #   verdict: true
     #   blocking-severities: kritisch,fehler
+    #   allowed-bots: ''

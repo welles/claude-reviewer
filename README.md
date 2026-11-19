@@ -37,7 +37,10 @@ Ein Repo bindet ihn mit einer Workflow-Datei und drei Secrets ein.
 - Gepostet wird in einem eigenen Job mit Schreibrechten, in dem kein Code des PRs läuft.
 - Skripte, Prompt und SDK kommen aus diesem Repo, genau vom Commit des aufgerufenen Workflows
   (`job.workflow_sha`), nie aus dem PR. Das SDK wird mit `npm ci` aus dem Lockfile installiert.
-- Nur `pull_request`-Events; PRs aus Forks und von Bots werden nicht geprüft.
+- Nur `pull_request`-Events; PRs aus Forks und von Bots werden nicht geprüft. Ausnahme: Bots, die
+  unter `allowed-bots` stehen (z. B. ein Coding-Agent, der PRs als GitHub App im selben Repo öffnet).
+  Ihre PRs bekommen die Secrets wie jeder PR aus dem Repo; nur Bots eintragen, denen das Repo
+  ohnehin Schreibzugriff gibt.
 - Ein PR könnte versuchen, das Modell zu einer Freigabe zu überreden (Anweisungen im Code oder in
   der Beschreibung). Der Prompt weist das an, und das Modell kann nur eigene Threads auflösen, aber
   eine Garantie ist das nicht. Die Freigabe ersetzt kein menschliches Review, sobald andere Leute
@@ -88,6 +91,7 @@ gh secret set REVIEWER_APP_KEY -R <owner>/<repo> < claude-reviewer.private-key.p
 | `instructions` | `.github/review-instructions.md` | Projekt-Anweisungen im Repo |
 | `verdict` | `true` | Freigeben/Änderungen verlangen statt nur kommentieren |
 | `blocking-severities` | `kritisch,fehler` | Schweren, die Änderungen verlangen |
+| `allowed-bots` | leer | Logins von Bots, deren PRs trotzdem geprüft werden, kommagetrennt ohne Leerzeichen (z. B. `my-agent[bot]`) |
 | `max-turns` | `60` | Obergrenze an Schritten pro Review |
 | `max-budget-usd` | `5` | Obergrenze an API-Kosten pro Review |
 
