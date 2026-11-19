@@ -37,6 +37,12 @@ on:
         description: Comma-separated severities that request changes while a finding is open
         type: string
         default: kritisch,fehler
+      allowed-bots:
+        description: >-
+          Comma-separated logins of bots whose PRs are reviewed anyway, without spaces
+          (e.g. "my-agent[bot]"); other bots (Dependabot) stay skipped
+        type: string
+        default: ''
       max-turns:
         description: Upper limit of agent turns per review
         type: number
@@ -70,11 +76,14 @@ jobs:
     # Only pull_request events: they run without secrets for PRs from forks, so code from a PR
     # never runs next to the key (pull_request_target would). Fork PRs are skipped because they get
     # no secrets anyway; labels can only be set by people with write access. PRs of bots
-    # (Dependabot) are skipped too, also when a person sets the label.
+    # (Dependabot) are skipped too, also when a person sets the label, unless the bot is listed in
+    # `allowed-bots` (e.g. a coding agent that opens PRs in this repository, not from a fork).
     if: >-
       github.event_name == 'pull_request' &&
-      github.event.sender.type != 'Bot' &&
-      github.event.pull_request.user.type != 'Bot' &&
+      (github.event.sender.type != 'Bot' ||
+        contains(format(',{0},', inputs.allowed-bots), format(',{0},', github.event.sender.login))) &&
+      (github.event.pull_request.user.type != 'Bot' ||
+        contains(format(',{0},', inputs.allowed-bots), format(',{0},', github.event.pull_request.user.login))) &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       (github.event.action != 'labeled' || github.event.label.name == inputs.label)
     # The name tells other runs which job is a thorough review of which PR (see thorough-exists.cjs)
