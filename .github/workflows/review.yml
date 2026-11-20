@@ -211,6 +211,10 @@ jobs:
           client-id: ${{ secrets.REVIEWER_APP_CLIENT_ID }}
           private-key: ${{ secrets.REVIEWER_APP_KEY }}
           permission-pull-requests: write
+          # Resolving the threads of fixed findings (GraphQL resolveReviewThread) is refused with
+          # pull requests alone ("Resource not accessible by integration"). The token stays in
+          # this job, which runs only this repository's scripts; the model never gets it.
+          permission-contents: write
 
       - name: Post review
         # v8.0.0

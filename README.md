@@ -55,8 +55,10 @@ Ein Repo bindet ihn mit einer Workflow-Datei und drei Secrets ein.
 3. **GitHub App** (empfohlen, damit das Review unter eigenem Namen erscheint):
    1. Settings → Developer settings → GitHub Apps → New GitHub App. Name z. B. `claude-reviewer`,
       Homepage-URL dieses Repo, Webhook aus.
-   2. Repository permissions: **Pull requests: Read and write** (Metadata: Read-only kommt
-      automatisch). Nur auf diesem Account installierbar.
+   2. Repository permissions: **Pull requests: Read and write** und **Contents: Read and write**
+      (Metadata: Read-only kommt automatisch). Contents braucht das Auflösen der Threads behobener
+      Funde (`resolveReviewThread`); das Token bleibt im Job `comment`, das Modell bekommt es nie.
+      Nur auf diesem Account installierbar.
    3. Unter „Private keys“ einen Schlüssel erzeugen; die *Client ID* steht oben auf der Seite.
    4. „Install App“ → nur die Repos auswählen, die geprüft werden sollen.
    5. Im Repo die Secrets `REVIEWER_APP_CLIENT_ID` (Client ID) und `REVIEWER_APP_KEY` (Inhalt der
